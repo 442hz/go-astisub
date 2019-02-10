@@ -175,6 +175,12 @@ func ReadFromSSA(i io.Reader) (o *Subtitles, err error) {
 				sectionName = ssaSectionNameStyles
 				format = make(map[int]string)
 				continue
+			case "aegisub project garbage", "aegisub extradata":
+				//see http://plorkyeran.com/aegisub/
+				//aegisub before 10/12/14 - r8632
+				// will not Skip the [Aegisub Project Garbage]
+				// and [Aegisub Extradata] sections when exporting to ASS
+				continue
 			default:
 				astilog.Debugf("astisub: unknown section: %s", line)
 				sectionName = ssaSectionNameUnknown
@@ -1042,6 +1048,10 @@ func (e *ssaEvent) item(styles map[string]*Style) (i *Item, err error) {
 	// Set style
 	if len(e.style) > 0 {
 		var ok bool
+		//fixup 'style *Default not found' error
+		if strings.HasPrefix(e.style, "*") {
+			e.style = strings.TrimPrefix(e.style, "*")
+		}
 		if i.Style, ok = styles[e.style]; !ok {
 			err = fmt.Errorf("astisub: style %s not found", e.style)
 			return
@@ -1049,6 +1059,8 @@ func (e *ssaEvent) item(styles map[string]*Style) (i *Item, err error) {
 	}
 
 	// Loop through lines
+	//fixup \\N and \\n problem
+	e.text = strings.Replace(e.text, "\\N", "\\n", -1)
 	for _, s := range strings.Split(e.text, "\\n") {
 		// Init
 		s = strings.TrimSpace(s)
@@ -1063,14 +1075,17 @@ func (e *ssaEvent) item(styles map[string]*Style) (i *Item, err error) {
 			for _, idxs := range matches {
 				if lineItem != nil {
 					lineItem.Text = s[previousEffectEndOffset:idxs[0]]
+					//fmt.Printf("lineItem.Text1: %s\n", lineItem.Text)
 					l.Items = append(l.Items, *lineItem)
 				}
 				previousEffectEndOffset = idxs[1]
 				lineItem = &LineItem{InlineStyle: &StyleAttributes{SSAEffect: s[idxs[0]:idxs[1]]}}
 			}
 			lineItem.Text = s[previousEffectEndOffset:]
+			//fmt.Printf("lineItem.Text2: %s\n", lineItem.Text)
 			l.Items = append(l.Items, *lineItem)
 		} else {
+			//fmt.Printf("Text: %s\n", s)
 			l.Items = append(l.Items, LineItem{Text: s})
 		}
 
